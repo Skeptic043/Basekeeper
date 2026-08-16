@@ -1,0 +1,42 @@
+# Local orchestration and planning
+/AGENTS.md
+/.agents/
+/.codex/
+/.project/
+
+# Local secrets and machine configuration
+.env
+.env.*
+!.env.example
+*.user
+*.suo
+/.vs/
+/.vscode/
+/.idea/
+
+# Operating-system files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs, caches, and temporary files
+*.log
+*.tmp
+*.bak
+*.swp
+*.zip
+/cache/
+/tmp/
+
+# Local development, test-save, and packaging output
+/artifacts/
+/build/
+/dist/
+/local/
+/out/
+/release/
+/sandbox/
+/.test-save/
+/steamcmd/
+/*.vdf
+/steam_appid.txt
