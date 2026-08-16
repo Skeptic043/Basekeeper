@@ -221,7 +221,7 @@ local function candidateWinsByDistance(left, right)
     return left.destination.id < right.destination.id
 end
 
-local function itemIsEligibleForDestination(destination, item)
+function RoutingPlanner.itemIsEligible(destination, item)
     if not rangeMatches(destination.advancedFilters.condition, item.conditionPercent)
         or not rangeMatches(destination.advancedFilters.remaining, item.remainingPercent) then
         return false
@@ -317,7 +317,7 @@ function RoutingPlanner.plan(snapshot)
             local sourceCountRemoved = false
             if sourceState then
                 sourceState.weight = sourceState.weight - item.weight
-                if itemIsEligibleForDestination(sourceDestination, item) then
+                if RoutingPlanner.itemIsEligible(sourceDestination, item) then
                     sourceState.counts[item.fullType] = (sourceState.counts[item.fullType] or 0) - 1
                     sourceCountRemoved = true
                 end
@@ -327,7 +327,7 @@ function RoutingPlanner.plan(snapshot)
                 local distance = item.distances[destination.id]
                 local state = planned[destination.id]
                 if destination.active and distance ~= nil and state.weight + item.weight <= destination.maxWeight + WEIGHT_EPSILON
-                    and itemIsEligibleForDestination(destination, item) then
+                    and RoutingPlanner.itemIsEligible(destination, item) then
                     local target = destination.stockTargets[item.fullType]
                     local count = state.counts[item.fullType] or 0
                     if not target or count < target then
