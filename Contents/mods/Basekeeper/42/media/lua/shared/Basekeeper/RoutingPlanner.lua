@@ -140,7 +140,7 @@ local function validateSnapshot(snapshot)
         if not isInteger(input.priority) or input.priority < 0 or input.priority > 10
             or type(input.active) ~= "boolean"
             or not isFiniteNumber(input.maxWeight) or input.maxWeight < 0
-            or not isFiniteNumber(input.baseWeight) or input.baseWeight < 0 then
+            or not isFiniteNumber(input.initialWeight) or input.initialWeight < 0 then
             return nil, "invalid_destination"
         end
         local category, categoryError = CategoryRules.normalize(input.category)
@@ -155,10 +155,6 @@ local function validateSnapshot(snapshot)
         if not advancedFilters then
             return nil, filtersError
         end
-        local baseCounts, baseError = copyCounts(input.baseCounts, "base_counts")
-        if not baseCounts then
-            return nil, baseError
-        end
         local originalCounts, originalError = copyCounts(input.originalCounts, "original_counts")
         if not originalCounts then
             return nil, originalError
@@ -171,8 +167,7 @@ local function validateSnapshot(snapshot)
             advancedFilters = advancedFilters,
             active = input.active,
             maxWeight = input.maxWeight,
-            baseWeight = input.baseWeight,
-            baseCounts = baseCounts,
+            initialWeight = input.initialWeight,
             originalCounts = originalCounts,
         }
         destinations[#destinations + 1] = destination
@@ -216,7 +211,7 @@ local function validateSnapshot(snapshot)
             distances = distances,
         }
     end
-    return { mode = snapshot.mode, destinations = destinations, items = items }
+    return { mode = snapshot.mode, destinations = destinations, destinationById = destinationById, items = items }
 end
 
 local function candidateWinsByDistance(left, right)
@@ -224,6 +219,26 @@ local function candidateWinsByDistance(left, right)
         return left.distance < right.distance
     end
     return left.destination.id < right.destination.id
+end
+
+local function itemIsEligibleForDestination(destination, item)
+    if not rangeMatches(destination.advancedFilters.condition, item.conditionPercent)
+        or not rangeMatches(destination.advancedFilters.remaining, item.remainingPercent) then
+        return false
+    end
+    if categoryIsBlacklisted(destination.category, item.fullType) then
+        return false
+    end
+    return destination.stockTargets[item.fullType] ~= nil
+        or CategoryRules.matches(destination.category, { fullType = item.fullType, displayCategory = item.displayCategory })
+end
+
+local function balanceSourceWins(candidate, best, sourceId)
+    return candidate.destination.id == sourceId and best.destination.id ~= sourceId
+end
+
+local function balanceSourceLoses(candidate, best, sourceId)
+    return candidate.destination.id ~= sourceId and best.destination.id == sourceId
 end
 
 local function chooseCandidate(mode, candidates, item)
@@ -257,17 +272,17 @@ local function chooseCandidate(mode, candidates, item)
                 local right = (best.count + 1) / best.target
                 if left ~= right then
                     wins = left < right
-                elseif candidate.destination.id == item.sourceId and best.destination.id ~= item.sourceId then
+                elseif balanceSourceWins(candidate, best, item.sourceId) then
                     wins = true
-                elseif candidate.destination.id ~= item.sourceId or best.destination.id == item.sourceId then
+                elseif not balanceSourceLoses(candidate, best, item.sourceId) then
                     wins = candidateWinsByDistance(candidate, best)
                 end
             else
                 if candidate.count ~= best.count then
                     wins = candidate.count < best.count
-                elseif candidate.destination.id == item.sourceId and best.destination.id ~= item.sourceId then
+                elseif balanceSourceWins(candidate, best, item.sourceId) then
                     wins = true
-                elseif candidate.destination.id ~= item.sourceId or best.destination.id == item.sourceId then
+                elseif not balanceSourceLoses(candidate, best, item.sourceId) then
                     wins = candidateWinsByDistance(candidate, best)
                 end
             end
@@ -289,7 +304,7 @@ function RoutingPlanner.plan(snapshot)
 
     local planned = {}
     for _, destination in ipairs(normalized.destinations) do
-        planned[destination.id] = { weight = destination.baseWeight, counts = destination.baseCounts }
+        planned[destination.id] = { weight = destination.initialWeight, counts = destination.originalCounts }
     end
     local result = { assignments = {}, excluded = {}, final = {} }
 
@@ -297,19 +312,25 @@ function RoutingPlanner.plan(snapshot)
         if item.favorite then
             result.excluded[#result.excluded + 1] = { itemKey = item.key, reason = "favorite" }
         else
+            local sourceState = item.sourceId and planned[item.sourceId]
+            local sourceDestination = item.sourceId and normalized.destinationById[item.sourceId]
+            local sourceCountRemoved = false
+            if sourceState then
+                sourceState.weight = sourceState.weight - item.weight
+                if itemIsEligibleForDestination(sourceDestination, item) then
+                    sourceState.counts[item.fullType] = (sourceState.counts[item.fullType] or 0) - 1
+                    sourceCountRemoved = true
+                end
+            end
             local candidates = {}
             for _, destination in ipairs(normalized.destinations) do
                 local distance = item.distances[destination.id]
                 local state = planned[destination.id]
                 if destination.active and distance ~= nil and state.weight + item.weight <= destination.maxWeight + WEIGHT_EPSILON
-                    and rangeMatches(destination.advancedFilters.condition, item.conditionPercent)
-                    and rangeMatches(destination.advancedFilters.remaining, item.remainingPercent) then
+                    and itemIsEligibleForDestination(destination, item) then
                     local target = destination.stockTargets[item.fullType]
-                    local blacklisted = categoryIsBlacklisted(destination.category, item.fullType)
-                    local accepted = not blacklisted and (target ~= nil
-                        or CategoryRules.matches(destination.category, { fullType = item.fullType, displayCategory = item.displayCategory }))
                     local count = state.counts[item.fullType] or 0
-                    if accepted and (not target or count < target) then
+                    if not target or count < target then
                         candidates[#candidates + 1] = {
                             destination = destination,
                             distance = distance,
@@ -321,6 +342,12 @@ function RoutingPlanner.plan(snapshot)
                 end
             end
             if #candidates == 0 then
+                if sourceState then
+                    sourceState.weight = sourceState.weight + item.weight
+                    if sourceCountRemoved then
+                        sourceState.counts[item.fullType] = (sourceState.counts[item.fullType] or 0) + 1
+                    end
+                end
                 result.excluded[#result.excluded + 1] = { itemKey = item.key, reason = "no_destination" }
             else
                 local highestPriority = candidates[1].destination.priority

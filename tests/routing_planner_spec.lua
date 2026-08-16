@@ -38,7 +38,7 @@ local function destination(id, values)
         category = values.category or category({ Food = true }), stockTargets = values.stockTargets or {},
         advancedFilters = values.advancedFilters or {}, active = values.active == nil or values.active,
         maxWeight = values.maxWeight == nil and 100 or values.maxWeight,
-        baseWeight = values.baseWeight or 0, baseCounts = values.baseCounts or {}, originalCounts = values.originalCounts or {},
+        initialWeight = values.initialWeight or 0, originalCounts = values.originalCounts or {},
     }
 end
 
@@ -91,7 +91,7 @@ expect(#filtered.assignments == 2 and filtered.assignments[1].itemKey == "inclus
     "filters are inclusive, compose, and ignore absent metrics")
 
 local fullTarget = plan("nearest", {
-    destination("high", { priority = 10, stockTargets = { ["Base.Nails"] = 1 }, baseCounts = { ["Base.Nails"] = 1 } }),
+    destination("high", { priority = 10, stockTargets = { ["Base.Nails"] = 1 }, originalCounts = { ["Base.Nails"] = 1 } }),
     destination("low", { priority = 1, category = category({ Hardware = true }) }),
 }, { item("n", "Base.Nails", { displayCategory = "Hardware", distances = { high = 1, low = 2 } }) })
 expect(fullTarget.assignments[1].destinationId == "low", "full targets stop broader acceptance and allow fallback")
@@ -104,7 +104,7 @@ local priority = plan("nearest", {
 expect(priority.assignments[1].destinationId == "high-target", "priority wins before same-priority target deficits")
 
 local capacity = plan("nearest", {
-    destination("high", { priority = 10, maxWeight = 2, baseWeight = 1 }),
+    destination("high", { priority = 10, maxWeight = 2, initialWeight = 1 }),
     destination("low", { priority = 1 }),
 }, {
     item("first", "Base.Apple", { displayCategory = "Food", weight = 1, distances = { high = 1, low = 2 } }),
@@ -126,14 +126,41 @@ local consolidate = plan("consolidate", {
 }, { item("apple", "Base.Apple", { displayCategory = "Food", distances = { near = 1, holding = 5 } }) })
 expect(consolidate.assignments[1].destinationId == "holding", "consolidate prefers an existing exact type")
 
-local balanceUnlimited = plan("balance", {
-    destination("a", { baseCounts = { ["Base.Apple"] = 1 } }),
-    destination("b"),
-}, { item("apple", "Base.Apple", { sourceId = "a", displayCategory = "Food", distances = { a = 1, b = 2 } }) })
-expect(balanceUnlimited.assignments[1].destinationId == "b", "balance unlimited routes toward smaller planned exact counts")
+local retainedSource = plan("nearest", {
+    destination("source", { maxWeight = 6, initialWeight = 5, originalCounts = { ["Base.Apple"] = 1 } }),
+}, {
+    item("incoming", "Base.Apple", { displayCategory = "Food", weight = 1, distances = { source = 1 } }),
+    item("retained", "Base.Apple", { sourceId = "source", displayCategory = "Food", weight = 1, distances = {} }),
+    item("later", "Base.Apple", { displayCategory = "Food", weight = 1, distances = { source = 1 } }),
+})
+expect(#retainedSource.assignments == 1 and retainedSource.assignments[1].itemKey == "incoming"
+    and retainedSource.excluded[1].itemKey == "retained" and retainedSource.excluded[2].itemKey == "later"
+    and retainedSource.final.source.weight == 6 and retainedSource.final.source.counts["Base.Apple"] == 2,
+    "retained source items restore planned load and eligible counts after earlier assignments")
+
+local function balanceSourceTie(destinations, target)
+    local source = destination("a", {
+        stockTargets = target and { ["Base.Apple"] = 2 } or {},
+        originalCounts = { ["Base.Apple"] = 1 },
+    })
+    local other = destination("b", {
+        stockTargets = target and { ["Base.Apple"] = 2 } or {},
+    })
+    local ordered = destinations == "forward" and { source, other } or { other, source }
+    return plan("balance", ordered, {
+        item("apple", "Base.Apple", { sourceId = "a", displayCategory = "Food", distances = { a = 2, b = 1 } }),
+    })
+end
+
+for _, order in ipairs({ "forward", "reverse" }) do
+    expect(balanceSourceTie(order, false).assignments[1].destinationId == "a",
+        "balance unlimited source preference wins tied counts in " .. order .. " candidate order")
+    expect(balanceSourceTie(order, true).assignments[1].destinationId == "a",
+        "balance target source preference wins tied fractions in " .. order .. " candidate order")
+end
 local balanceTargets = plan("balance", {
-    destination("a", { stockTargets = { ["Base.Apple"] = 4 }, baseCounts = { ["Base.Apple"] = 1 } }),
-    destination("b", { stockTargets = { ["Base.Apple"] = 2 }, baseCounts = {} }),
+    destination("a", { stockTargets = { ["Base.Apple"] = 4 }, originalCounts = { ["Base.Apple"] = 1 } }),
+    destination("b", { stockTargets = { ["Base.Apple"] = 2 }, originalCounts = {} }),
 }, { item("apple", "Base.Apple", { distances = { a = 1, b = 1 } }) })
 expect(balanceTargets.assignments[1].destinationId == "a", "balance compares projected target fractions")
 
@@ -143,7 +170,7 @@ local snapshot = {
 }
 local copied = assert(Planner.plan(snapshot))
 copied.final.a.counts["Base.Apple"] = 99
-expect(snapshot.destinations[1].baseCounts["Base.Apple"] == nil and snapshot.items[1].distanceByDestination.a == 1,
+expect(snapshot.destinations[1].originalCounts["Base.Apple"] == nil and snapshot.items[1].distanceByDestination.a == 1,
     "planning neither mutates inputs nor shares output count tables")
 local invalid, invalidError = Planner.plan({ mode = "nearest", destinations = { destination("a"), destination("a") }, items = {} })
 expect(invalid == nil and invalidError == "invalid_destination_id", "validation completes before duplicate-id planning")
