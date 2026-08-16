@@ -15,6 +15,10 @@ local function isInteger(value)
     return type(value) == "number" and value == math.floor(value)
 end
 
+local function isFiniteNumber(value)
+    return type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge
+end
+
 local function validFullType(value)
     return type(value) == "string" and value:match("^[^%s%.]+%.[^%s%.]+$") ~= nil
 end
@@ -34,6 +38,43 @@ local function copyStockTargets(source)
         targets[fullType] = quantity
     end
     return targets
+end
+
+local function copyRange(source)
+    if type(source) ~= "table" then
+        return nil, "invalid_advanced_filter_range"
+    end
+    for key in pairs(source) do
+        if key ~= "min" and key ~= "max" then
+            return nil, "invalid_advanced_filter_range"
+        end
+    end
+    if not isFiniteNumber(source.min) or not isFiniteNumber(source.max)
+        or source.min < 0 or source.max > 100 or source.min > source.max then
+        return nil, "invalid_advanced_filter_range"
+    end
+    return { min = source.min, max = source.max }
+end
+
+local function copyAdvancedFilters(source)
+    if source == nil then
+        return {}
+    end
+    if type(source) ~= "table" then
+        return nil, "invalid_advanced_filters"
+    end
+    local filters = {}
+    for key, range in pairs(source) do
+        if key ~= "condition" and key ~= "remaining" then
+            return nil, "invalid_advanced_filters"
+        end
+        local copiedRange, rangeError = copyRange(range)
+        if not copiedRange then
+            return nil, rangeError
+        end
+        filters[key] = copiedRange
+    end
+    return filters
 end
 
 function ContainerConfig.normalize(config)
@@ -61,8 +102,13 @@ function ContainerConfig.normalize(config)
     if not stockTargets then
         return nil, stockError
     end
+    local advancedFilters, filtersError = copyAdvancedFilters(config.advancedFilters)
+    if not advancedFilters then
+        return nil, filtersError
+    end
     return {
         id = config.id, binding = binding, categoryId = config.categoryId, priority = priority,
         label = config.label, icon = config.icon, locked = config.locked == true, stockTargets = stockTargets,
+        advancedFilters = advancedFilters,
     }
 end
