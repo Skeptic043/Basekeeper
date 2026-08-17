@@ -22,6 +22,10 @@ end
 
 local rect = assert(Geometry.normalizeRect({ x = 1, y = 2, z = 0, w = 2, h = 3 }))
 expect(not Geometry.normalizeRect({ x = 1, y = 2, z = 0, w = 0, h = 1 }), "rectangles require positive size")
+for _, infinity in ipairs({ math.huge, -math.huge }) do
+    expect(not Geometry.normalizeRect({ x = infinity, y = 2, z = 0, w = 1, h = 1 }), "rectangle coordinates require finite integers")
+    expect(not Geometry.normalizeRect({ x = 1, y = 2, z = 0, w = infinity, h = 1 }), "rectangle dimensions require finite integers")
+end
 expect(Geometry.containsRect(rect, 1, 2, 0) and Geometry.containsRect(rect, 2, 4, 0), "rect bounds are inclusive/exclusive")
 expect(not Geometry.containsRect(rect, 3, 4, 0) and not Geometry.containsRect(rect, 2, 5, 0), "rect excludes upper bounds")
 expect(Geometry.rectsShareTiles(rect, { x = 2, y = 4, z = 0, w = 2, h = 2 }), "shared tiles connect")
@@ -61,6 +65,14 @@ expect(assert(Binding.normalize({ kind = "world", objectBindingId = "w1", x = 0,
 expect(assert(Binding.normalize({ kind = "placedItem", itemId = 7, x = 0, y = 0, z = 0 })).kind == "placedItem", "placed binding normalizes")
 expect(assert(Binding.normalize({ kind = "vehiclePart", vehicleSqlId = 7, partId = "TruckBed" })).kind == "vehiclePart", "vehicle binding normalizes")
 expect(not Binding.normalize({ kind = "vehiclePart", vehicleId = 7, partId = "TruckBed" }), "runtime vehicle ID cannot be durable binding")
+for _, infinity in ipairs({ math.huge, -math.huge }) do
+    expect(not Binding.normalize({ kind = "world", objectBindingId = "w1", x = infinity, y = 0, z = 0, containerIndex = 0 }),
+        "world bindings require finite integer fields")
+    expect(not Binding.normalize({ kind = "placedItem", itemId = infinity, x = 0, y = 0, z = 0 }),
+        "placed bindings require finite integer fields")
+    expect(not Binding.normalize({ kind = "vehiclePart", vehicleSqlId = infinity, partId = "TruckBed" }),
+        "vehicle bindings require finite integer fields")
+end
 
 local container = {}
 local wrongObject = { getModData = function() return { [Binding.OBJECT_MARKER_KEY] = "other" } end, getContainerByIndex = function() return container end }
@@ -124,6 +136,12 @@ local updated, updateError = Registry.updateContainer(root, "alpha", { id = "wor
 expect(not updated and updateError == "square_unavailable" and root.zones.alpha.containers.world.label == nil, "unresolved binding cannot update existing configuration")
 square.worldObjects = { worldItem }
 expect(Registry.resolveContainer(root, "alpha", "vehicle", { vehicles = {} }).status == "missing", "unresolved vehicle configuration is retained but inactive")
+for _, invalidId in ipairs({ "", 1 }) do
+    local invalidResolved = Registry.resolveContainer(root, "alpha", invalidId, { cell = cell })
+    expect(invalidResolved.status == "missing" and invalidResolved.reason == "invalid_container_id", "invalid container IDs return structured missing results")
+end
+local nilResolved = Registry.resolveContainer(root, "alpha", nil, { cell = cell })
+expect(nilResolved.status == "missing" and nilResolved.reason == "invalid_container_id", "nil container IDs return structured missing results")
 assert(Registry.removeArea(root, "alpha", { x = 0, y = 0, z = 0, w = 2, h = 2 }))
 expect(root.zones.alpha.containers.world ~= nil and Registry.resolveContainer(root, "alpha", "world", { cell = cell }).status == "inactive", "geometry exclusion retains configured destination inactive")
 expect(Registry.resolveContainer(root, "alpha", "vehicle", { vehicles = { vehicle } }).status == "inactive", "configured vehicle is inactive outside its zone")

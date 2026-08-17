@@ -37,6 +37,28 @@ local function itemId(item)
     return id
 end
 
+local function claimItemId(item, seenIds)
+    local id, idError = itemId(item)
+    if not id then
+        return nil, idError
+    end
+    if seenIds[id] then
+        return nil, "duplicate_source_item_id"
+    end
+    seenIds[id] = true
+    return id
+end
+
+local function claimDirectItemIds(items, seenIds)
+    for _, item in ipairs(items) do
+        local _, idError = claimItemId(item, seenIds)
+        if idError then
+            return nil, idError
+        end
+    end
+    return true
+end
+
 local function isKeyRing(item, runtime)
     local itemType = runtimeValue(runtime, "ItemType")
     if itemType and itemType.KEY_RING ~= nil and type(item.isItemType) == "function"
@@ -101,18 +123,14 @@ local function scanMain(character, runtime)
     end
 
     local byItem = {}
-    local sourceContainers = {}
+    local sourceContainers = { [main] = true }
     local rings = {}
     local seenIds = {}
     for _, item in ipairs(mainItems) do
-        local id, idError = itemId(item)
+        local id, idError = claimItemId(item, seenIds)
         if not id then
             return nil, idError
         end
-        if seenIds[id] then
-            return nil, "duplicate_source_item_id"
-        end
-        seenIds[id] = true
 
         local ring = isKeyRing(item, runtime)
         local bag, bagError = nil, nil
@@ -134,7 +152,10 @@ local function scanMain(character, runtime)
             rings[#rings + 1] = facts
         end
     end
-    return { main = main, items = mainItems, byItem = byItem, rings = rings, sourceContainers = sourceContainers }
+    return {
+        main = main, items = mainItems, byItem = byItem, rings = rings,
+        sourceContainers = sourceContainers, seenIds = seenIds,
+    }
 end
 
 local function mainCandidates(scan, character)
@@ -195,6 +216,10 @@ function PlayerSourceBuilder.buildAll(character, anchor, includeKeyRingKeys, run
         if not items then
             return nil, itemsError
         end
+        local idsClaimed, idError = claimDirectItemIds(items, scan.seenIds)
+        if not idsClaimed then
+            return nil, idError
+        end
         sources[#sources + 1] = descriptor("equipped:" .. tostring(facts.id), facts.bag, anchor, items)
     end
     if includeKeyRingKeys then
@@ -212,6 +237,10 @@ function PlayerSourceBuilder.buildAll(character, anchor, includeKeyRingKeys, run
             if not items then
                 return nil, itemsError
             end
+            local idsClaimed, idError = claimDirectItemIds(items, scan.seenIds)
+            if not idsClaimed then
+                return nil, idError
+            end
             sources[#sources + 1] = descriptor("keyring:" .. tostring(facts.id), container, anchor, items)
         end
     end
@@ -221,6 +250,10 @@ end
 function PlayerSourceBuilder.buildSelected(character, selectedContainer, anchor, runtime)
     if not validAnchor(anchor) then
         return nil, "invalid_anchor"
+    end
+    local selectedType = type(selectedContainer)
+    if selectedContainer == nil or (selectedType ~= "table" and selectedType ~= "userdata") then
+        return nil, "invalid_selected_container"
     end
     local scan, scanError = scanMain(character, runtime)
     if not scan then
@@ -237,6 +270,10 @@ function PlayerSourceBuilder.buildSelected(character, selectedContainer, anchor,
             if not items then
                 return nil, itemsError
             end
+            local idsClaimed, idError = claimDirectItemIds(items, scan.seenIds)
+            if not idsClaimed then
+                return nil, idError
+            end
             return { descriptor("equipped:" .. tostring(facts.id), facts.bag, anchor, items) }
         end
     end
@@ -244,11 +281,22 @@ function PlayerSourceBuilder.buildSelected(character, selectedContainer, anchor,
         local containingItem = selectedContainer:getContainingItem()
         local facts = scan.byItem[containingItem]
         if facts and facts.keyRing then
-            local items, itemsError = sourceItems(selectedContainer)
+            local ring, ringError = ringContainer(facts)
+            if not ring then
+                return nil, ringError
+            end
+            if ring ~= selectedContainer or scan.sourceContainers[ring] then
+                return nil, "invalid_selected_container"
+            end
+            local items, itemsError = sourceItems(ring)
             if not items then
                 return nil, itemsError
             end
-            return { descriptor("keyring:" .. tostring(facts.id), selectedContainer, anchor, items) }
+            local idsClaimed, idError = claimDirectItemIds(items, scan.seenIds)
+            if not idsClaimed then
+                return nil, idError
+            end
+            return { descriptor("keyring:" .. tostring(facts.id), ring, anchor, items) }
         end
     end
     return nil, "invalid_selected_container"

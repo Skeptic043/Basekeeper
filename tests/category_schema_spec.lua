@@ -113,6 +113,13 @@ expect(oldRoot == nil and oldError == "unsupported_schema_version", "explicit ol
 local futureRoot, futureError = Schema.ensureRoot({ schemaVersion = 3, personal = {}, zones = {} })
 expect(futureRoot == nil, "future schema must fail")
 expect(futureError == "future_schema_version", "future schema error must be explicit")
+for _, version in ipairs({ "two", false, 2.5, math.huge, -math.huge, 0 / 0 }) do
+    local malformed = { schemaVersion = version, personal = {}, zones = {} }
+    local malformedRoot, malformedError = Schema.ensureRoot(malformed)
+    local versionPreserved = version ~= version and malformed.schemaVersion ~= malformed.schemaVersion or malformed.schemaVersion == version
+    expect(not malformedRoot and malformedError == "invalid_schema_version" and versionPreserved,
+        "explicit malformed schema versions must not be repaired")
+end
 
 local categoryInput = {
     id = "basekeeper:custom:tools", kind = "custom", name = "Tools",

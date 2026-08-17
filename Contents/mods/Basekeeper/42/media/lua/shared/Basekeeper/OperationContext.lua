@@ -61,21 +61,29 @@ local function positiveInteger(value)
 end
 
 local function validZoneMetadata(zone, zoneId)
-    return type(zone) == "table" and nonEmptyString(zone.id) and zone.id == zoneId
-        and positiveInteger(zone.revision)
-        and (zone.routingMode == "consolidate" or zone.routingMode == "balance" or zone.routingMode == "nearest")
-        and type(zone.containers) == "table"
+    if type(zone) ~= "table" or not nonEmptyString(zone.id) or zone.id ~= zoneId
+        or not positiveInteger(zone.revision)
+        or (zone.routingMode ~= "consolidate" and zone.routingMode ~= "balance" and zone.routingMode ~= "nearest")
+        or type(zone.containers) ~= "table" or type(zone.areas) ~= "table" or #zone.areas == 0 then
+        return false
+    end
+    for _, area in ipairs(zone.areas) do
+        if not ZoneGeometry.normalizeRect(area) then
+            return false
+        end
+    end
+    return true
 end
 
 local function findActiveZone(root, accountKey, playerAnchor)
     local found = nil
     for _, zoneId in ipairs(sortedKeys(root.zones)) do
         local zone = root.zones[zoneId]
+        if not validZoneMetadata(zone, zoneId) then
+            return nil, "invalid_zone_metadata"
+        end
         if ZoneGeometry.containsZone(zone, playerAnchor.x, playerAnchor.y, playerAnchor.z)
             and ZoneRegistry.can(zone, accountKey, "use") then
-            if not validZoneMetadata(zone, zoneId) then
-                return nil, "invalid_zone_metadata"
-            end
             if found then
                 return nil, "ambiguous_active_zone"
             end

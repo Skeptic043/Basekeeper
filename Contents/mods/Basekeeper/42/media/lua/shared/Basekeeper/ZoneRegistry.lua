@@ -316,6 +316,9 @@ function ZoneRegistry.removeContainer(root, zoneId, containerId)
 end
 
 function ZoneRegistry.resolveContainer(root, zoneId, containerId, runtime)
+    if not nonEmptyString(containerId) then
+        return { status = "missing", reason = "invalid_container_id" }
+    end
     local zone, zoneError = ZoneRegistry.get(root, zoneId)
     if not zone then
         return { status = "missing", reason = zoneError }

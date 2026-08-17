@@ -9,6 +9,11 @@ local CategoryCatalog = Basekeeper.CategoryCatalog
 
 Schema.VERSION = 2
 
+local function isFiniteInteger(value)
+    return type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge
+        and value == math.floor(value)
+end
+
 function Schema.newRoot()
     return {
         schemaVersion = Schema.VERSION,
@@ -24,7 +29,10 @@ function Schema.ensureRoot(root)
     if type(root) ~= "table" then
         return Schema.newRoot()
     end
-    if type(root.schemaVersion) == "number" then
+    if root.schemaVersion ~= nil then
+        if not isFiniteInteger(root.schemaVersion) then
+            return nil, "invalid_schema_version"
+        end
         if root.schemaVersion < Schema.VERSION then
             return nil, "unsupported_schema_version"
         end

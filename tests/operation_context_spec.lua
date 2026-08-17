@@ -117,7 +117,8 @@ local function invalidMetadataZone(values)
     return {
         id = values.id == nil and "alpha" or values.id, ownerAccount = "alice",
         routingMode = values.routingMode or "nearest", revision = values.revision == nil and 1 or values.revision,
-        areas = { { x = 0, y = 0, z = 0, w = 2, h = 2 } }, members = { bob = { use = true } },
+        areas = values.areas == nil and { { x = 0, y = 0, z = 0, w = 2, h = 2 } } or values.areas,
+        members = { bob = { use = true } },
         containers = values.containers == nil and {} or values.containers,
     }
 end
@@ -126,6 +127,8 @@ for _, invalidZone in ipairs({
     invalidMetadataZone({ revision = 0 }),
     invalidMetadataZone({ routingMode = "invalid" }),
     invalidMetadataZone({ containers = "invalid" }),
+    invalidMetadataZone({ areas = "invalid" }),
+    invalidMetadataZone({ areas = { { x = 0, y = 0, z = 0, w = math.huge, h = 2 } } }),
 }) do
     local invalidMetadata, invalidMetadataError = Context.build({
         root = { schemaVersion = 2, personal = {}, zones = { alpha = invalidZone } }, accountKey = "bob",
@@ -133,6 +136,18 @@ for _, invalidZone in ipairs({
     }, {})
     expect(not invalidMetadata and invalidMetadataError == "invalid_zone_metadata", "active zones reject corrupt metadata")
 end
+
+local unreachableCorruptZone, unreachableCorruptError = Context.build({
+    root = {
+        schemaVersion = 2, personal = {}, zones = {
+            alpha = invalidMetadataZone(),
+            broken = invalidMetadataZone({ id = "broken", areas = "invalid" }),
+        },
+    },
+    accountKey = "bob", playerAnchor = { x = 1, y = 1, z = 0 }, source = { kind = "carried", container = sourceContainer },
+}, {})
+expect(not unreachableCorruptZone and unreachableCorruptError == "invalid_zone_metadata",
+    "all operation-context zones validate metadata before geometry access")
 
 local unauthorized, unauthorizedError = Context.build({ root = root, accountKey = "eve", playerAnchor = { x = 1, y = 1, z = 0 }, source = { kind = "carried", container = sourceContainer } }, {})
 expect(not unauthorized and unauthorizedError == "outside_usable_zone", "unauthorized players have no active zone")

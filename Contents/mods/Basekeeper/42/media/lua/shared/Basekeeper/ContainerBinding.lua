@@ -10,7 +10,8 @@ local function nonEmptyString(value)
 end
 
 local function isInteger(value)
-    return type(value) == "number" and value == math.floor(value)
+    return type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge
+        and value == math.floor(value)
 end
 
 local function resolveCell(runtime)

@@ -162,4 +162,67 @@ local nanSources, nanError = Builder.buildAll({
 }, { x = 0, y = 0, z = 0 }, false, runtime)
 expect(not nanSources and nanError == "invalid_source_item_id", "NaN item IDs reject")
 
+local aliasedBagValues = { category = "Container" }
+local aliasedBag = item(30, aliasedBagValues)
+local aliasedMain = inventory({ aliasedBag })
+aliasedBagValues.inventory = aliasedMain
+local aliasedBagSources, aliasedBagError = Builder.buildAll({
+    getInventory = function() return aliasedMain end,
+    isEquipped = function(_, candidate) return candidate == aliasedBag end,
+}, { x = 0, y = 0, z = 0 }, false, runtime)
+expect(not aliasedBagSources and aliasedBagError == "duplicate_source_container", "equipped bags cannot reuse main inventory")
+
+local aliasedRingValues = { category = "Container", type = "keyring" }
+local aliasedRing = item(31, aliasedRingValues)
+local ringAliasedMain = inventory({ aliasedRing })
+aliasedRingValues.inventory = ringAliasedMain
+local aliasedRingSources, aliasedRingError = Builder.buildAll({
+    getInventory = function() return ringAliasedMain end,
+    isEquipped = function() return false end,
+}, { x = 0, y = 0, z = 0 }, true, runtime)
+expect(not aliasedRingSources and aliasedRingError == "duplicate_source_container", "key rings cannot reuse main inventory")
+
+local invalidBag = item(40, { category = "Container", inventory = inventory({ item(math.huge) }) })
+local invalidBagSources, invalidBagError = Builder.buildAll({
+    getInventory = function() return inventory({ invalidBag }) end,
+    isEquipped = function(_, candidate) return candidate == invalidBag end,
+}, { x = 0, y = 0, z = 0 }, false, runtime)
+expect(not invalidBagSources and invalidBagError == "invalid_source_item_id", "equipped source contents require finite integer IDs")
+
+local duplicateRingContents = inventory({ item(41) })
+local duplicateRing = item(41, { category = "Container", type = "keyring", inventory = duplicateRingContents })
+local duplicateRingMain = inventory({ duplicateRing })
+local duplicateRingSources, duplicateRingError = Builder.buildAll({
+    getInventory = function() return duplicateRingMain end,
+    isEquipped = function() return false end,
+}, { x = 0, y = 0, z = 0 }, true, runtime)
+expect(not duplicateRingSources and duplicateRingError == "duplicate_source_item_id", "key-ring contents share operation-local item IDs")
+
+local sharedDirectItem = item(500)
+local firstSharedBag = item(42, { category = "Container", inventory = inventory({ sharedDirectItem }) })
+local secondSharedBag = item(43, { category = "Container", inventory = inventory({ sharedDirectItem }) })
+local sharedBagsMain = inventory({ firstSharedBag, secondSharedBag })
+local sharedBagsSources, sharedBagsError = Builder.buildAll({
+    getInventory = function() return sharedBagsMain end,
+    isEquipped = function(_, candidate) return candidate == firstSharedBag or candidate == secondSharedBag end,
+}, { x = 0, y = 0, z = 0 }, false, runtime)
+expect(not sharedBagsSources and sharedBagsError == "duplicate_source_item_id", "equipped sources cannot duplicate direct item IDs")
+
+local selectedDuplicateBag = item(44, { category = "Container", inventory = inventory({ item(44) }) })
+local selectedDuplicateMain = inventory({ selectedDuplicateBag })
+local selectedDuplicateSources, selectedDuplicateError = Builder.buildSelected({
+    getInventory = function() return selectedDuplicateMain end,
+    isEquipped = function(_, candidate) return candidate == selectedDuplicateBag end,
+}, selectedDuplicateBag:getInventory(), { x = 0, y = 0, z = 0 }, runtime)
+expect(not selectedDuplicateSources and selectedDuplicateError == "duplicate_source_item_id", "selected sources share operation-local item IDs")
+
+local nilSelected, nilSelectedError = Builder.buildSelected(character, nil, { x = 0, y = 0, z = 0 }, runtime)
+local primitiveSelected, primitiveSelectedError = Builder.buildSelected(character, 1, { x = 0, y = 0, z = 0 }, runtime)
+expect(not nilSelected and nilSelectedError == "invalid_selected_container" and not primitiveSelected and primitiveSelectedError == "invalid_selected_container",
+    "nil and primitive selected containers reject without lookup")
+local mismatchedRingContainer = inventory({ item(600) })
+mismatchedRingContainer.containingItem = keyRing
+local mismatchedRingSources, mismatchedRingError = Builder.buildSelected(character, mismatchedRingContainer, { x = 0, y = 0, z = 0 }, runtime)
+expect(not mismatchedRingSources and mismatchedRingError == "invalid_selected_container", "selected key rings require their exact live inventory")
+
 print("player_source_builder_spec: ok")
