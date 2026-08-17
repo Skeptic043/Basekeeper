@@ -154,4 +154,31 @@ local immutableJob = assert(Jobs.build(immutable, runtime))
 immutableJob.final.a.counts["Base.Apple"] = 99
 expect(immutable.destinations[1].config.stockTargets["Base.Apple"] == nil and immutableJob.moves ~= immutable.sources, "request and output tables stay independent")
 
+local subsetFirst = item(40, "Base.Apple", { category = "Food" })
+local subsetSecond = item(41, "Base.Hammer", { category = "Tools" })
+local subsetContainer = container({ subsetFirst, subsetSecond })
+local subsetRequest = {
+    kind = "unload", zoneId = "subset", zoneRevision = 1, mode = "nearest", character = {},
+    destinations = { destination("subset-target", {}, { x = 1 }) },
+    sources = { { key = "subset", container = subsetContainer, anchor = { x = 0, y = 0, z = 0 }, items = { subsetFirst } } },
+}
+local subsetJob = assert(Jobs.build(subsetRequest, runtime))
+expect(#subsetJob.moves == 1 and subsetJob.moves[1].item == subsetFirst and subsetContainer.itemReads == 1,
+    "explicit source subset routes only its copied direct member after one direct snapshot")
+subsetRequest.sources[1].items[1] = subsetSecond
+expect(subsetJob.moves[1].item == subsetFirst, "explicit source array is copied before planning")
+
+local invalidSubset, invalidSubsetError = Jobs.build({
+    kind = "unload", zoneId = "subset", zoneRevision = 1, mode = "nearest", character = {},
+    destinations = { destination("subset-invalid", {}, { x = 1 }) },
+    sources = { { key = "subset", container = subsetContainer, anchor = { x = 0, y = 0, z = 0 }, items = { item(42, "Base.Apple", { category = "Food" }) } } },
+}, runtime)
+expect(not invalidSubset and invalidSubsetError == "source_item_not_direct_member", "explicit subset rejects non-direct items")
+local duplicateSubset, duplicateSubsetError = Jobs.build({
+    kind = "unload", zoneId = "subset", zoneRevision = 1, mode = "nearest", character = {},
+    destinations = { destination("subset-duplicate", {}, { x = 1 }) },
+    sources = { { key = "subset", container = subsetContainer, anchor = { x = 0, y = 0, z = 0 }, items = { subsetFirst, subsetFirst } } },
+}, runtime)
+expect(not duplicateSubset and duplicateSubsetError == "duplicate_source_item", "explicit subset rejects duplicate items")
+
 print("storage_job_planner_spec: ok")

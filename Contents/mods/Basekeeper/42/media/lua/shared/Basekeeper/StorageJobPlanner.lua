@@ -43,6 +43,26 @@ local function copyArray(source, errorCode)
     return copied
 end
 
+local function copyItemArray(source, errorCode)
+    if type(source) ~= "table" then
+        return nil, errorCode
+    end
+    local length = #source
+    for key in pairs(source) do
+        if type(key) ~= "number" or key ~= math.floor(key) or key < 1 or key > length then
+            return nil, errorCode
+        end
+    end
+    local copied = {}
+    for index = 1, length do
+        if source[index] == nil then
+            return nil, errorCode
+        end
+        copied[index] = source[index]
+    end
+    return copied
+end
+
 local function copyCounts(counts)
     local copied = {}
     for fullType, count in pairs(counts) do
@@ -229,9 +249,34 @@ local function snapshotUnloadSources(request, runtime, factCache, destinationByC
         if anchorDistance == nil then
             return nil, anchorError
         end
+        local explicitItems = nil
+        if input.items ~= nil then
+            local explicitError
+            explicitItems, explicitError = copyItemArray(input.items, "invalid_source_items")
+            if not explicitItems then
+                return nil, explicitError
+            end
+        end
         local directItems, directError = ItemSnapshot.directItems(input.container)
         if not directItems then
             return nil, directError
+        end
+        if explicitItems then
+            local directMembership = {}
+            for _, directItem in ipairs(directItems) do
+                directMembership[directItem] = true
+            end
+            local supplied = {}
+            for _, explicitItem in ipairs(explicitItems) do
+                if supplied[explicitItem] then
+                    return nil, "duplicate_source_item"
+                end
+                if not directMembership[explicitItem] then
+                    return nil, "source_item_not_direct_member"
+                end
+                supplied[explicitItem] = true
+            end
+            directItems = explicitItems
         end
         local source = { key = input.key, container = input.container, anchor = input.anchor, items = {} }
         local seenItems = {}
