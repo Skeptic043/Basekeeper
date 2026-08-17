@@ -167,6 +167,8 @@ function OperationContext.build(request, runtime)
         local config, configError = ContainerConfig.normalize(zone.containers[containerId])
         if not config then
             unavailable[#unavailable + 1] = { containerId = containerId, reason = configError }
+        elseif config.id ~= containerId then
+            unavailable[#unavailable + 1] = { containerId = containerId, reason = "container_id_mismatch" }
         else
             local resolved = ContainerBinding.resolve(config.binding, runtime)
             if resolved.status ~= "active" then

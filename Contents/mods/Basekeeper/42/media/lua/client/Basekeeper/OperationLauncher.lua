@@ -23,6 +23,11 @@ local function finiteInteger(value)
     return type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge and value == math.floor(value)
 end
 
+local function isObject(value)
+    local valueType = type(value)
+    return valueType == "table" or valueType == "userdata"
+end
+
 local function playerAnchor(character)
     if not character or type(character.getX) ~= "function" or type(character.getY) ~= "function" or type(character.getZ) ~= "function" then
         return nil
@@ -87,8 +92,8 @@ end
 function OperationLauncher.start(request, runtime)
     if type(request) ~= "table" or (request.command ~= "unload" and request.command ~= "unloadAll"
         and request.command ~= "organize" and request.command ~= "organizeAll")
-        or not request.character or not finiteInteger(request.playerNum) or request.playerNum < 0
-        or request.selectedContainer == nil or (request.side ~= "player" and request.side ~= "loot")
+        or not isObject(request.character) or not finiteInteger(request.playerNum) or request.playerNum < 0
+        or not isObject(request.selectedContainer) or (request.side ~= "player" and request.side ~= "loot")
         or (request.onFinished ~= nil and type(request.onFinished) ~= "function") then
         return nil, "invalid_request"
     end

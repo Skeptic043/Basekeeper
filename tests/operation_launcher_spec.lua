@@ -33,6 +33,8 @@ local placed = {
 local placedSource = assert(Source.describe(placed, "loot", playerAnchor))
 expect(placedSource.anchor.x == 5 and placedSource.anchor.y == 6, "placed items use their world item square")
 expect(not Source.describe({}, "loot", playerAnchor), "unavailable loot identity rejects explicitly")
+local invalidSource, invalidSourceError = Source.describe(7, "loot", playerAnchor)
+expect(not invalidSource and invalidSourceError == "invalid_selected_container", "scalar selected containers reject without indexing methods")
 
 local calls = { builds = {}, starts = 0, all = 0, selected = 0 }
 Basekeeper.OperationContext = {
@@ -89,10 +91,20 @@ local function request(command, side, selected)
 end
 local runtime = { getRoot = function() return root end, isClient = function() return false end }
 
+local invalidCharacter, invalidCharacterError = Launcher.start({
+    command = "unload", character = 7, playerNum = 2, selectedContainer = main, side = "player",
+}, runtime)
+expect(not invalidCharacter and invalidCharacterError == "invalid_request", "scalar characters reject without indexing methods")
+local invalidContainer, invalidContainerError = Launcher.start({
+    command = "unload", character = character, playerNum = 2, selectedContainer = 7, side = "player",
+}, runtime)
+expect(not invalidContainer and invalidContainerError == "invalid_request", "scalar launcher containers reject before source description")
+
 calls.moves = {}
 local noWork = assert(Launcher.start(request("unload"), runtime))
 expect(noWork.status == "no_work" and calls.starts == 0 and calls.context.playerAnchor.x == 1 and calls.context.playerAnchor.y == 2,
     "standalone identity and integer player anchors build no-work without queue mutation")
+expect(calls.starts == 0, "no-work never enters the executor or timed-action queue boundary")
 expect(calls.context.accountKey == "local:2" and calls.selected == 1 and calls.builds[#calls.builds].kind == "unload",
     "selected player unload uses the player builder")
 

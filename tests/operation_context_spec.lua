@@ -163,6 +163,24 @@ expect(not ambiguousZone and ambiguousZoneError == "ambiguous_active_zone", "ove
 resolvedById.a = { status = "active", container = containerB }
 local ambiguousContainer, ambiguousContainerError = Context.build(request({ kind = "carried", container = containerB }), {})
 expect(not ambiguousContainer and ambiguousContainerError == "ambiguous_selected_container", "duplicate selected live containers reject")
+
+resolves = 0
+local mismatchRoot = {
+    schemaVersion = 2, personal = {}, zones = {
+        alpha = {
+            id = "alpha", ownerAccount = "alice", routingMode = "nearest", revision = 1,
+            areas = { { x = 0, y = 0, z = 0, w = 4, h = 4 } }, members = { bob = { use = true } },
+            containers = { persisted = config("normalized", { kind = "world", objectBindingId = "a", x = 0, y = 0, z = 0, containerIndex = 0 }) },
+        },
+    },
+}
+local mismatch = assert(Context.build({
+    root = mismatchRoot, accountKey = "bob", playerAnchor = { x = 1, y = 1, z = 0 },
+    source = { kind = "carried", container = sourceContainer },
+}, {}))
+expect(#mismatch.destinations == 0 and #mismatch.unavailable == 1
+    and mismatch.unavailable[1].containerId == "persisted" and mismatch.unavailable[1].reason == "container_id_mismatch"
+    and resolves == 0, "mismatched persisted container IDs are diagnosed without resolution")
 Binding.resolve = originalResolve
 
 print("operation_context_spec: ok")

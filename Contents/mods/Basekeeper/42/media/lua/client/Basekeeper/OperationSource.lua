@@ -14,6 +14,11 @@ local function copyAnchor(anchor)
     return { x = anchor.x, y = anchor.y, z = anchor.z }
 end
 
+local function isObject(value)
+    local valueType = type(value)
+    return valueType == "table" or valueType == "userdata"
+end
+
 local function squareAnchor(square)
     if not square or type(square.getX) ~= "function" or type(square.getY) ~= "function" or type(square.getZ) ~= "function" then
         return nil
@@ -53,7 +58,7 @@ end
 function OperationSource.describe(selectedContainer, side, playerAnchor, runtime)
     local anchor = copyAnchor(playerAnchor)
     if not anchor then return nil, "invalid_player_anchor" end
-    if selectedContainer == nil then return nil, "invalid_selected_container" end
+    if not isObject(selectedContainer) then return nil, "invalid_selected_container" end
     if side == "player" then
         return { kind = "carried", container = selectedContainer }
     end

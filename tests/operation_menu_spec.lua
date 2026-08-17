@@ -5,7 +5,8 @@ Basekeeper.ZoneGeometry = {
     vehicleIntersectsZone = function() return true end,
     normalizeRect = function(area) return type(area) == "table" and area.x and area.y and area.z and area.w and area.h and area or nil end,
 }
-Basekeeper.ZoneRegistry = { can = function() return true end }
+local permitted = true
+Basekeeper.ZoneRegistry = { can = function() return permitted end }
 Basekeeper.ContainerBinding = { normalize = function(binding)
     if type(binding) ~= "table" then return nil end
     if binding.kind == "world" and type(binding.objectBindingId) == "string" and type(binding.containerIndex) == "number" then return binding end
@@ -13,23 +14,45 @@ Basekeeper.ContainerBinding = { normalize = function(binding)
     if binding.kind == "vehiclePart" and type(binding.vehicleSqlId) == "number" and type(binding.partId) == "string" then return binding end
 end }
 Basekeeper.OperationSource = { describe = function(container, side, anchor)
-    return side == "player" and { kind = "carried", container = container } or { kind = container.vehicle and "vehicle" or "tile", container = container, anchor = { x = 1, y = 1, z = 0 }, vehicle = container.vehicle }
+    if side == "player" then return { kind = "carried", container = container } end
+    if type(container.getType) == "function" and container:getType() == "floor" then return { kind = "floor", container = container } end
+    return { kind = container.vehicle and "vehicle" or "tile", container = container, anchor = { x = 1, y = 1, z = 0 }, vehicle = container.vehicle }
 end }
 local started = {}
-Basekeeper.OperationLauncher = { start = function(request) started[#started + 1] = request; return { status = "no_work" } end }
+local launcherError = nil
+Basekeeper.OperationLauncher = { start = function(request)
+    started[#started + 1] = request
+    if launcherError then return nil, launcherError end
+    return { status = "no_work" }
+end }
 getText = function(key) return key end
 dofile("Contents/mods/Basekeeper/42/media/lua/client/Basekeeper/OperationMenu.lua")
 dofile("Contents/mods/Basekeeper/42/media/lua/client/Basekeeper/InventoryTabContext.lua")
 local Menu, Bridge = Basekeeper.OperationMenu, Basekeeper.InventoryTabContext
 local character = { getX=function() return 1 end, getY=function() return 1 end, getZ=function() return 0 end }
 local root = { schemaVersion=2, personal={}, zones={ z={ id="z", revision=1, routingMode="nearest", ownerAccount="local:0", members={}, areas={{x=0,y=0,z=0,w=3,h=3}}, containers={} } } }
-local runtime = { getRoot=function() return root end, halo={ addText=function() end } }
+local halo = {}
+local runtime = { getRoot=function() return root end, halo={ addText=function(_, message) halo[#halo + 1] = message end } }
 local function cmds(side, container)
     return Menu.commandsForTests({character=character,playerNum=0,selectedContainer=container or {},side=side}, runtime)
 end
 local player = cmds("player")
 expect(#player == 2 and player[1] == "unload" and player[2] == "unloadAll", "player order is Unload then Unload All")
 expect(cmds("loot")[1] == "unload", "unconfigured loot exposes Unload")
+local floor = { getType = function() return "floor" end }
+expect(cmds("loot", floor)[1] == "unload", "Floor exposes Unload when the player is in an active usable zone")
+permitted = false
+expect(not cmds("loot"), "unauthorized players have no menu")
+permitted = true
+character.getX = function() return 9 end
+expect(not cmds("loot"), "players outside every active zone have no menu")
+character.getX = function() return 1 end
+runtime.getRoot = function() return nil end
+expect(not cmds("loot"), "absent shared roots have no menu")
+runtime.getRoot = function() return root end
+Basekeeper.ZoneGeometry.vehicleIntersectsZone = function() return false end
+expect(not cmds("loot", { vehicle = {} }), "vehicles outside the active zone have no menu")
+Basekeeper.ZoneGeometry.vehicleIntersectsZone = function() return true end
 root.zones.z.routingMode = "invalid"
 expect(not cmds("loot"), "malformed routing mode hides the menu")
 root.zones.z.routingMode = "nearest"
@@ -74,6 +97,11 @@ expect(#c.options==1 and not c.options[1].onSelect and #c.options[1].submenu.opt
 expect(not Menu.append(c,{character=character,playerNum=0,selectedContainer=fixed,side="loot"},runtime),"duplicate parents are prevented")
 c.options[1].submenu.options[1].onSelect(c.options[1].submenu.options[1].target)
 expect(started[1].command=="organize" and started[1].selectedContainer==fixed and started[1].side=="loot","callback forwards exact launcher request")
+expect(halo[#halo] == "UI_Basekeeper_NoWork", "no-work callbacks show the localized halo feedback")
+launcherError = "planner_failed"
+c.options[1].submenu.options[1].onSelect(c.options[1].submenu.options[1].target)
+expect(halo[#halo] == "UI_Basekeeper_UnableToStart", "launcher errors show one generic localized halo feedback")
+launcherError = nil
 c.options = {}
 expect(Menu.append(c,{character=character,playerNum=0,selectedContainer=fixed,side="loot"},runtime),"cleared context can receive a fresh parent")
 local prior=0; local button={inventory=fixed,onRightMouseDown=function()prior=prior+1 end}; local page={playerObj=character,playerNum=0,onCharacter=false,backpacks={button}}
