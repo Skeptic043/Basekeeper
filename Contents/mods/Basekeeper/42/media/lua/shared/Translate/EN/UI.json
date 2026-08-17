@@ -15,5 +15,12 @@
     "UI_Basekeeper_Options_IncludeKeyRingKeys_Tooltip": "Include direct keys from key rings when using Unload All.",
     "UI_Basekeeper_Options_HaulingMode": "Hauling mode",
     "UI_Basekeeper_Options_HaulingMode_Safe": "Safe",
-    "UI_Basekeeper_Options_HaulingMode_Yolo": "YOLO"
+    "UI_Basekeeper_Options_HaulingMode_Yolo": "YOLO",
+    "UI_Basekeeper_Menu": "Basekeeper",
+    "UI_Basekeeper_Unload": "Unload",
+    "UI_Basekeeper_UnloadAll": "Unload All",
+    "UI_Basekeeper_Organize": "Organize",
+    "UI_Basekeeper_OrganizeAll": "Organize All",
+    "UI_Basekeeper_NoWork": "Nothing to do.",
+    "UI_Basekeeper_UnableToStart": "Unable to start Basekeeper operation."
 }
