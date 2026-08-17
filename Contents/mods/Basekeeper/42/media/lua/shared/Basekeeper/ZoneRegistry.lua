@@ -75,6 +75,45 @@ local function increment(zone)
     zone.revision = zone.revision + 1
 end
 
+local function allPermissions(value)
+    return { use = value, edit = value, build = value, manage = value }
+end
+
+function ZoneRegistry.newUseOnlyPermissions()
+    return { use = true, edit = false, build = false, manage = false }
+end
+
+function ZoneRegistry.getPermissions(zone, accountKey)
+    if type(zone) ~= "table" then
+        return nil, "invalid_zone"
+    end
+    if not nonEmptyString(accountKey) then
+        return nil, "invalid_account_key"
+    end
+    if zone.ownerAccount == accountKey then
+        return allPermissions(true)
+    end
+    local member = type(zone.members) == "table" and zone.members[accountKey] or nil
+    if type(member) ~= "table" then
+        return allPermissions(false)
+    end
+    return {
+        use = member.use == true,
+        edit = member.edit == true,
+        build = member.build == true,
+        manage = member.manage == true,
+    }
+end
+
+function ZoneRegistry.can(zone, accountKey, permissionName)
+    if permissionName ~= "use" and permissionName ~= "edit"
+        and permissionName ~= "build" and permissionName ~= "manage" then
+        return false
+    end
+    local permissions = ZoneRegistry.getPermissions(zone, accountKey)
+    return permissions ~= nil and permissions[permissionName] == true
+end
+
 function ZoneRegistry.get(root, zoneId)
     if not validRoot(root) or not nonEmptyString(zoneId) then
         return nil, "invalid_zone_id"
@@ -173,8 +212,10 @@ function ZoneRegistry.removeArea(root, zoneId, area)
     return zone
 end
 
-function ZoneRegistry.bindingIsEligible(zone, binding, runtime)
-    local resolved = ContainerBinding.resolve(binding, runtime)
+function ZoneRegistry.bindingIsEligibleResolved(zone, binding, resolved)
+    if type(resolved) ~= "table" then
+        return false, "invalid_resolved_binding"
+    end
     if resolved.status ~= "active" then
         return false, resolved.reason
     end
@@ -194,6 +235,21 @@ function ZoneRegistry.bindingIsEligible(zone, binding, runtime)
     return false, "invalid_binding_kind"
 end
 
+function ZoneRegistry.bindingIsEligible(zone, binding, runtime)
+    local resolved = ContainerBinding.resolve(binding, runtime)
+    return ZoneRegistry.bindingIsEligibleResolved(zone, binding, resolved)
+end
+
+local function hasBindingCollision(zone, config, ignoredId)
+    for id, existing in pairs(zone.containers) do
+        local existingBinding = type(existing) == "table" and ContainerBinding.normalize(existing.binding) or nil
+        if id ~= ignoredId and existingBinding and equalValue(existingBinding, config.binding) then
+            return true
+        end
+    end
+    return false
+end
+
 function ZoneRegistry.addContainer(root, zoneId, definition, runtime)
     local zone, zoneError = ZoneRegistry.get(root, zoneId)
     if not zone then
@@ -205,6 +261,9 @@ function ZoneRegistry.addContainer(root, zoneId, definition, runtime)
     end
     if zone.containers[config.id] ~= nil then
         return nil, "container_exists"
+    end
+    if hasBindingCollision(zone, config) then
+        return nil, "duplicate_container_binding"
     end
     local eligible, eligibilityError = ZoneRegistry.bindingIsEligible(zone, config.binding, runtime)
     if not eligible then
@@ -226,6 +285,9 @@ function ZoneRegistry.updateContainer(root, zoneId, definition, runtime)
     end
     if type(zone.containers[config.id]) ~= "table" then
         return nil, "container_not_found"
+    end
+    if hasBindingCollision(zone, config, config.id) then
+        return nil, "duplicate_container_binding"
     end
     local eligible, eligibilityError = ZoneRegistry.bindingIsEligible(zone, config.binding, runtime)
     if not eligible then
@@ -266,7 +328,7 @@ function ZoneRegistry.resolveContainer(root, zoneId, containerId, runtime)
     if resolved.status ~= "active" then
         return resolved
     end
-    local eligible, eligibilityError = ZoneRegistry.bindingIsEligible(zone, config.binding, runtime)
+    local eligible, eligibilityError = ZoneRegistry.bindingIsEligibleResolved(zone, config.binding, resolved)
     if not eligible then
         return { status = "inactive", reason = eligibilityError }
     end

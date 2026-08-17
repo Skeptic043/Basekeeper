@@ -6,9 +6,11 @@ end
 
 dofile("Contents/mods/Basekeeper/42/media/lua/shared/Basekeeper/CategoryRules.lua")
 dofile("Contents/mods/Basekeeper/42/media/lua/shared/Basekeeper/CategoryCatalog.lua")
+dofile("Contents/mods/Basekeeper/42/media/lua/shared/Basekeeper/ContainerBinding.lua")
+dofile("Contents/mods/Basekeeper/42/media/lua/shared/Basekeeper/ContainerConfig.lua")
 dofile("Contents/mods/Basekeeper/42/media/lua/shared/Basekeeper/Schema.lua")
 
-local mockedRoot = { schemaVersion = 1, personal = {}, zones = {} }
+local mockedRoot = { schemaVersion = 2, personal = {}, zones = {} }
 local transmittedRoots = {}
 local clientMode = true
 local serverMode = false
@@ -36,6 +38,7 @@ dofile("Contents/mods/Basekeeper/42/media/lua/shared/Basekeeper/State.lua")
 
 local Rules = Basekeeper.CategoryRules
 local Catalog = Basekeeper.CategoryCatalog
+local Config = Basekeeper.ContainerConfig
 local Schema = Basekeeper.Schema
 local State = Basekeeper.State
 
@@ -101,13 +104,44 @@ expect(#Catalog.getPresetIds() == #expectedPresetIds, "catalog should expose all
 local retained = { value = true }
 local partialRoot = { retained = retained, personal = "bad" }
 local repaired = assert(Schema.ensureRoot(partialRoot))
-expect(repaired.schemaVersion == 1, "partial root should migrate to schema version 1")
+expect(repaired.schemaVersion == 2, "partial root should repair to schema version 2")
 expect(repaired.personal ~= nil and repaired.zones ~= nil, "partial root should receive required tables")
 expect(repaired.retained == retained, "migration should retain Basekeeper-owned unknown keys")
 
-local futureRoot, futureError = Schema.ensureRoot({ schemaVersion = 2, personal = {}, zones = {} })
+local oldRoot, oldError = Schema.ensureRoot({ schemaVersion = 1, personal = {}, zones = {} })
+expect(oldRoot == nil and oldError == "unsupported_schema_version", "explicit old schema must fail")
+local futureRoot, futureError = Schema.ensureRoot({ schemaVersion = 3, personal = {}, zones = {} })
 expect(futureRoot == nil, "future schema must fail")
 expect(futureError == "future_schema_version", "future schema error must be explicit")
+
+local categoryInput = {
+    id = "basekeeper:custom:tools", kind = "custom", name = "Tools",
+    includedCategories = { Tools = true }, whitelist = {}, blacklist = {},
+}
+local configInput = {
+    id = "tools", categoryId = "basekeeper:custom:tools", categoryRules = categoryInput,
+    binding = { kind = "placedItem", itemId = 1, x = 0, y = 0, z = 0 },
+    stockTargets = { ["Base.Nails"] = 4 },
+}
+local config = assert(Config.normalize(configInput))
+expect(config.categoryRules ~= categoryInput and config.categoryRules.whitelist["Base.Nails"],
+    "configured categories are copied and stock targets are exact whitelist entries")
+configInput.categoryRules.includedCategories.Tools = nil
+configInput.stockTargets["Base.Screws"] = 1
+expect(config.categoryRules.includedCategories.Tools and not config.categoryRules.whitelist["Base.Screws"],
+    "configured category snapshots do not share caller tables")
+local mismatched = { id = "wrong", kind = "custom", name = "Wrong", includedCategories = {}, whitelist = {}, blacklist = {} }
+local mismatchConfig, mismatchError = Config.normalize({
+    id = "bad", categoryId = "basekeeper:custom:tools", categoryRules = mismatched,
+    binding = configInput.binding,
+})
+expect(not mismatchConfig and mismatchError == "category_id_mismatch", "category IDs must match their snapshots")
+local blacklisted = { id = "basekeeper:custom:tools", kind = "custom", name = "Tools", includedCategories = {}, whitelist = {}, blacklist = { ["Base.Nails"] = true } }
+local blacklistConfig, blacklistError = Config.normalize({
+    id = "bad", categoryId = "basekeeper:custom:tools", categoryRules = blacklisted,
+    binding = configInput.binding, stockTargets = { ["Base.Nails"] = 1 },
+})
+expect(not blacklistConfig and blacklistError == "stock_target_blacklisted", "stock targets cannot override blacklists")
 
 local clientLibrary, clientError = State.createAccountLibrary("client")
 expect(clientLibrary == nil and clientError == "read_only_client", "MP clients must be read-only")

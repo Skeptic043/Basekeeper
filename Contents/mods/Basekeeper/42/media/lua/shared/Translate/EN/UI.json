@@ -12,5 +12,8 @@
     "UI_Basekeeper_Options_RestoreHeldItems": "Restore held items after Unload/Organize",
     "UI_Basekeeper_Options_RestoreHeldItems_Tooltip": "Return held items after Basekeeper finishes an Unload or Organize operation.",
     "UI_Basekeeper_Options_IncludeKeyRingKeys": "Include key-ring keys in Unload All",
-    "UI_Basekeeper_Options_IncludeKeyRingKeys_Tooltip": "Include direct keys from key rings when using Unload All."
+    "UI_Basekeeper_Options_IncludeKeyRingKeys_Tooltip": "Include direct keys from key rings when using Unload All.",
+    "UI_Basekeeper_Options_HaulingMode": "Hauling mode",
+    "UI_Basekeeper_Options_HaulingMode_Safe": "Safe",
+    "UI_Basekeeper_Options_HaulingMode_Yolo": "YOLO"
 }

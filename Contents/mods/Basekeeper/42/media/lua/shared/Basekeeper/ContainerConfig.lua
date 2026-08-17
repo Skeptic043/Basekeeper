@@ -2,10 +2,14 @@ Basekeeper = Basekeeper or {}
 if not Basekeeper.ContainerBinding then
     require "Basekeeper/ContainerBinding"
 end
+if not Basekeeper.CategoryRules then
+    require "Basekeeper/CategoryRules"
+end
 Basekeeper.ContainerConfig = Basekeeper.ContainerConfig or {}
 
 local ContainerConfig = Basekeeper.ContainerConfig
 local ContainerBinding = Basekeeper.ContainerBinding
+local CategoryRules = Basekeeper.CategoryRules
 
 local function nonEmptyString(value)
     return type(value) == "string" and value ~= ""
@@ -81,6 +85,13 @@ function ContainerConfig.normalize(config)
     if type(config) ~= "table" or not nonEmptyString(config.id) or not nonEmptyString(config.categoryId) then
         return nil, "invalid_container_config"
     end
+    local categoryRules, categoryError = CategoryRules.normalize(config.categoryRules)
+    if not categoryRules then
+        return nil, categoryError
+    end
+    if categoryRules.id ~= config.categoryId then
+        return nil, "category_id_mismatch"
+    end
     local binding, bindingError = ContainerBinding.normalize(config.binding)
     if not binding then
         return nil, bindingError
@@ -102,12 +113,18 @@ function ContainerConfig.normalize(config)
     if not stockTargets then
         return nil, stockError
     end
+    for fullType in pairs(stockTargets) do
+        if categoryRules.blacklist[fullType] then
+            return nil, "stock_target_blacklisted"
+        end
+        categoryRules.whitelist[fullType] = true
+    end
     local advancedFilters, filtersError = copyAdvancedFilters(config.advancedFilters)
     if not advancedFilters then
         return nil, filtersError
     end
     return {
-        id = config.id, binding = binding, categoryId = config.categoryId, priority = priority,
+        id = config.id, binding = binding, categoryId = config.categoryId, categoryRules = categoryRules, priority = priority,
         label = config.label, icon = config.icon, locked = config.locked == true, stockTargets = stockTargets,
         advancedFilters = advancedFilters,
     }

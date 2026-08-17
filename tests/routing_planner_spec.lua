@@ -12,16 +12,17 @@ local Planner = Basekeeper.RoutingPlanner
 
 local binding = { kind = "placedItem", itemId = 1, x = 0, y = 0, z = 0 }
 local filters = { condition = { min = 0, max = 100 }, remaining = { min = 50, max = 50 } }
-local config = assert(Config.normalize({ id = "c", binding = binding, categoryId = "cat", advancedFilters = filters }))
+local configCategory = { id = "cat", kind = "custom", name = "Config", includedCategories = {}, whitelist = {}, blacklist = {} }
+local config = assert(Config.normalize({ id = "c", binding = binding, categoryId = "cat", categoryRules = configCategory, advancedFilters = filters }))
 expect(config.advancedFilters.condition.min == 0 and config.advancedFilters.condition.max == 100,
     "advanced filter boundaries normalize inclusively")
 filters.condition.min = 99
 expect(config.advancedFilters.condition.min == 0, "advanced filters are copied")
-expect(next(assert(Config.normalize({ id = "empty", binding = binding, categoryId = "cat" })).advancedFilters) == nil,
+expect(next(assert(Config.normalize({ id = "empty", binding = binding, categoryId = "cat", categoryRules = configCategory })).advancedFilters) == nil,
     "omitted advanced filters normalize independently to empty tables")
-expect(not Config.normalize({ id = "bad", binding = binding, categoryId = "cat", advancedFilters = { condition = { min = 40 } } }),
+expect(not Config.normalize({ id = "bad", binding = binding, categoryId = "cat", categoryRules = configCategory, advancedFilters = { condition = { min = 40 } } }),
     "incomplete advanced ranges reject")
-expect(not Config.normalize({ id = "bad", binding = binding, categoryId = "cat", advancedFilters = { other = { min = 0, max = 1 } } }),
+expect(not Config.normalize({ id = "bad", binding = binding, categoryId = "cat", categoryRules = configCategory, advancedFilters = { other = { min = 0, max = 1 } } }),
     "unknown advanced ranges reject")
 
 local function category(included, whitelist, blacklist)

@@ -4,6 +4,7 @@ end
 
 dofile("Contents/mods/Basekeeper/42/media/lua/shared/Basekeeper/ZoneGeometry.lua")
 dofile("Contents/mods/Basekeeper/42/media/lua/shared/Basekeeper/ContainerBinding.lua")
+dofile("Contents/mods/Basekeeper/42/media/lua/shared/Basekeeper/CategoryRules.lua")
 dofile("Contents/mods/Basekeeper/42/media/lua/shared/Basekeeper/ContainerConfig.lua")
 dofile("Contents/mods/Basekeeper/42/media/lua/shared/Basekeeper/ZoneRegistry.lua")
 Basekeeper.CategoryCatalog = Basekeeper.CategoryCatalog or {}
@@ -14,6 +15,10 @@ local Binding = Basekeeper.ContainerBinding
 local Config = Basekeeper.ContainerConfig
 local Registry = Basekeeper.ZoneRegistry
 local Schema = Basekeeper.Schema
+
+local function categoryRules(id)
+    return { id = id, kind = "custom", name = "Test", includedCategories = {}, whitelist = {}, blacklist = {} }
+end
 
 local rect = assert(Geometry.normalizeRect({ x = 1, y = 2, z = 0, w = 2, h = 3 }))
 expect(not Geometry.normalizeRect({ x = 1, y = 2, z = 0, w = 0, h = 1 }), "rectangles require positive size")
@@ -43,12 +48,12 @@ expect(not last and lastError == "last_area", "last area remains protected")
 expect(Geometry.containsZone(alpha, 0, 0, 0) and not Geometry.containsZone(alpha, 2, 0, 0), "zone membership uses rect union")
 
 local stock = { ["Base.Nails"] = 4 }
-local defaultConfig = assert(Config.normalize({ id = "c1", binding = { kind = "placedItem", itemId = 1, x = 0, y = 0, z = 0 }, categoryId = "basekeeper:preset:tools", stockTargets = stock }))
+local defaultConfig = assert(Config.normalize({ id = "c1", binding = { kind = "placedItem", itemId = 1, x = 0, y = 0, z = 0 }, categoryId = "basekeeper:preset:tools", categoryRules = categoryRules("basekeeper:preset:tools"), stockTargets = stock }))
 expect(defaultConfig.priority == 5 and defaultConfig.locked == false, "container defaults are stable")
-expect(assert(Config.normalize({ id = "c2", binding = defaultConfig.binding, categoryId = "cat", priority = 0 })).priority == 0, "priority zero is valid")
-expect(assert(Config.normalize({ id = "c3", binding = defaultConfig.binding, categoryId = "cat", priority = 10 })).priority == 10, "priority ten is valid")
-expect(not Config.normalize({ id = "bad", binding = defaultConfig.binding, categoryId = "cat", stockTargets = { Bad = 1 } }), "stock targets require full types")
-expect(not Config.normalize({ id = "bad", binding = defaultConfig.binding, categoryId = "cat", stockTargets = { ["Base.Nails"] = 1.5 } }), "stock target quantities are positive integers")
+expect(assert(Config.normalize({ id = "c2", binding = defaultConfig.binding, categoryId = "cat", categoryRules = categoryRules("cat"), priority = 0 })).priority == 0, "priority zero is valid")
+expect(assert(Config.normalize({ id = "c3", binding = defaultConfig.binding, categoryId = "cat", categoryRules = categoryRules("cat"), priority = 10 })).priority == 10, "priority ten is valid")
+expect(not Config.normalize({ id = "bad", binding = defaultConfig.binding, categoryId = "cat", categoryRules = categoryRules("cat"), stockTargets = { Bad = 1 } }), "stock targets require full types")
+expect(not Config.normalize({ id = "bad", binding = defaultConfig.binding, categoryId = "cat", categoryRules = categoryRules("cat"), stockTargets = { ["Base.Nails"] = 1.5 } }), "stock target quantities are positive integers")
 stock["Base.Nails"] = 9
 expect(defaultConfig.stockTargets["Base.Nails"] == 4, "stock targets are copied")
 
@@ -62,7 +67,7 @@ local wrongObject = { getModData = function() return { [Binding.OBJECT_MARKER_KE
 local markedObject = { modData = {}, transmissions = 0 }
 function markedObject:getModData() return self.modData end
 function markedObject:transmitModData() self.transmissions = self.transmissions + 1 end
-function markedObject:getContainerByIndex(index) return index == 1 and container or nil end
+function markedObject:getContainerByIndex(index) return (index == 0 or index == 1) and container or nil end
 assert(Binding.markWorldObject(markedObject, "w1"))
 expect(markedObject.modData[Binding.OBJECT_MARKER_KEY] == "w1" and markedObject.transmissions == 1, "world marking is namespaced and transmitted")
 expect(Binding.markWorldObject(markedObject, "w1") == "w1" and markedObject.transmissions == 1, "second container reuses the existing object marker")
@@ -104,21 +109,43 @@ local vehicleBinding = { kind = "vehiclePart", vehicleSqlId = 99, partId = "Truc
 expect(Binding.resolveVehiclePart(vehicleBinding, { vehicles = { vehicle } }).status == "active", "vehicle resolves by SQL ID and part ID")
 expect(Binding.resolveVehiclePart(vehicleBinding, { vehicles = {} }).status == "missing", "unloaded vehicle is inactive")
 assert(Registry.addArea(root, "alpha", { x = 10, y = 0, z = 0, w = 1, h = 1 }))
-local c1 = assert(Registry.addContainer(root, "alpha", { id = "world", binding = worldBinding, categoryId = "cat" }, { cell = cell }))
-local c2 = assert(Registry.addContainer(root, "alpha", { id = "bag", binding = placedBinding, categoryId = "cat" }, { cell = cell }))
-local c3 = assert(Registry.addContainer(root, "alpha", { id = "vehicle", binding = vehicleBinding, categoryId = "cat" }, { vehicles = { vehicle } }))
+local c1 = assert(Registry.addContainer(root, "alpha", { id = "world", binding = worldBinding, categoryId = "cat", categoryRules = categoryRules("cat") }, { cell = cell }))
+local c2 = assert(Registry.addContainer(root, "alpha", { id = "bag", binding = placedBinding, categoryId = "cat", categoryRules = categoryRules("cat") }, { cell = cell }))
+local c3 = assert(Registry.addContainer(root, "alpha", { id = "vehicle", binding = vehicleBinding, categoryId = "cat", categoryRules = categoryRules("cat") }, { vehicles = { vehicle } }))
 expect(c1.id == "world" and c2.id == "bag" and c3.id == "vehicle", "eligible configurations persist by ID")
-local unresolvedWorld, unresolvedWorldError = Registry.addContainer(root, "alpha", { id = "missing-world", binding = worldBinding, categoryId = "cat" }, { cell = {} })
+local unresolvedWorldBinding = { kind = "world", objectBindingId = "missing", x = 0, y = 0, z = 0, containerIndex = 0 }
+local unresolvedWorld, unresolvedWorldError = Registry.addContainer(root, "alpha", { id = "missing-world", binding = unresolvedWorldBinding, categoryId = "cat", categoryRules = categoryRules("cat") }, { cell = {} })
 expect(not unresolvedWorld and unresolvedWorldError == "square_unavailable", "unresolved fixed-world binding cannot be configured")
 square.worldObjects = {}
-local unresolvedBag, unresolvedBagError = Registry.addContainer(root, "alpha", { id = "missing-bag", binding = placedBinding, categoryId = "cat" }, { cell = cell })
+local unresolvedBagBinding = { kind = "placedItem", itemId = 99, x = 0, y = 0, z = 0 }
+local unresolvedBag, unresolvedBagError = Registry.addContainer(root, "alpha", { id = "missing-bag", binding = unresolvedBagBinding, categoryId = "cat", categoryRules = categoryRules("cat") }, { cell = cell })
 expect(not unresolvedBag and unresolvedBagError == "placed_item_missing", "unresolved placed-item binding cannot be configured")
-local updated, updateError = Registry.updateContainer(root, "alpha", { id = "world", binding = worldBinding, categoryId = "cat", label = "new" }, { cell = {} })
+local updated, updateError = Registry.updateContainer(root, "alpha", { id = "world", binding = worldBinding, categoryId = "cat", categoryRules = categoryRules("cat"), label = "new" }, { cell = {} })
 expect(not updated and updateError == "square_unavailable" and root.zones.alpha.containers.world.label == nil, "unresolved binding cannot update existing configuration")
 square.worldObjects = { worldItem }
 expect(Registry.resolveContainer(root, "alpha", "vehicle", { vehicles = {} }).status == "missing", "unresolved vehicle configuration is retained but inactive")
 assert(Registry.removeArea(root, "alpha", { x = 0, y = 0, z = 0, w = 2, h = 2 }))
 expect(root.zones.alpha.containers.world ~= nil and Registry.resolveContainer(root, "alpha", "world", { cell = cell }).status == "inactive", "geometry exclusion retains configured destination inactive")
 expect(Registry.resolveContainer(root, "alpha", "vehicle", { vehicles = { vehicle } }).status == "inactive", "configured vehicle is inactive outside its zone")
+
+local permissions = assert(Registry.getPermissions(alpha, "alice"))
+expect(permissions.use and permissions.edit and permissions.build and permissions.manage, "owners receive all permissions")
+local useOnly = Registry.newUseOnlyPermissions()
+alpha.members.bob = useOnly
+expect(Registry.can(alpha, "bob", "use") and not Registry.can(alpha, "bob", "edit"), "members use independent strict permissions")
+alpha.members.charlie = { edit = true, use = "true", build = 1, manage = false }
+expect(not Registry.can(alpha, "charlie", "use") and Registry.can(alpha, "charlie", "edit"), "malformed permissions do not imply use")
+expect(not Registry.can(alpha, "nobody", "use"), "nonmembers have no permissions")
+
+local duplicateRoot = Schema.newRoot()
+assert(Registry.create(duplicateRoot, { id = "duplicate", name = "Duplicate", ownerAccount = "alice", routingMode = "nearest", areas = { { x = 0, y = 0, z = 0, w = 2, h = 2 } } }))
+assert(Registry.addContainer(duplicateRoot, "duplicate", { id = "first", binding = worldBinding, categoryId = "cat", categoryRules = categoryRules("cat") }, { cell = cell }))
+duplicateRoot.zones.duplicate.containers.first.binding.unrelated = true
+local duplicateConfig, duplicateError = Registry.addContainer(duplicateRoot, "duplicate", { id = "second", binding = worldBinding, categoryId = "cat", categoryRules = categoryRules("cat") }, { cell = cell })
+expect(not duplicateConfig and duplicateError == "duplicate_container_binding", "normalized bindings reject duplicates despite unknown persisted fields")
+local distinctIndex = assert(Registry.addContainer(duplicateRoot, "duplicate", { id = "other-index", binding = { kind = "world", objectBindingId = "w1", x = 0, y = 0, z = 0, containerIndex = 0 }, categoryId = "cat", categoryRules = categoryRules("cat") }, { cell = cell }))
+expect(distinctIndex.id == "other-index", "different fixed-container indices remain distinct")
+local updateCollision, updateCollisionError = Registry.updateContainer(duplicateRoot, "duplicate", { id = "other-index", binding = worldBinding, categoryId = "cat", categoryRules = categoryRules("cat") }, { cell = cell })
+expect(not updateCollision and updateCollisionError == "duplicate_container_binding", "updates cannot collide with another configured binding")
 
 print("zone_registry_spec: ok")

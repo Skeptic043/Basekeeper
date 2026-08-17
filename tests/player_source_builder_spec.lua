@@ -13,6 +13,18 @@ local modOptions = {
             self.tickboxes[#self.tickboxes + 1] = handle
             return handle
         end
+        function group:addComboBox(optionId, optionName)
+            local handle = { id = optionId, name = optionName, value = nil, items = {} }
+            function handle:addItem(itemName, selected)
+                self.items[#self.items + 1] = { name = itemName, selected = selected }
+                if selected then self.value = #self.items end
+            end
+            function handle:getValue() return self.value end
+            function handle:setValue(value) self.value = value end
+            self.combos = self.combos or {}
+            self.combos[#self.combos + 1] = handle
+            return handle
+        end
         registrations[#registrations + 1] = group
         return group
     end,
@@ -34,11 +46,20 @@ expect(firstOption.id == "restoreHeldItems" and firstOption.default == true and 
     "settings use stable IDs and settled defaults")
 expect(firstOption.tooltip == "localized:UI_Basekeeper_Options_RestoreHeldItems_Tooltip" and secondOption.tooltip == "localized:UI_Basekeeper_Options_IncludeKeyRingKeys_Tooltip",
     "settings localize both tooltips")
+local haulingMode = registrations[1].combos[1]
+expect(haulingMode.id == "haulingMode" and haulingMode.items[1].name == "localized:UI_Basekeeper_Options_HaulingMode_Safe"
+    and haulingMode.items[1].selected and haulingMode.items[2].name == "localized:UI_Basekeeper_Options_HaulingMode_Yolo",
+    "hauling mode uses stable Safe and YOLO indices")
 assert(Settings.registerForTests(modOptions))
 expect(#registrations == 1, "settings registration is idempotent")
 firstOption:setValue(false)
 secondOption:setValue(true)
 expect(not Settings.getRestoreHeldItems() and Settings.getIncludeKeyRingKeysInUnloadAll(), "settings read current handles")
+expect(Settings.getHaulingMode() == "safe", "Safe is the default hauling mode")
+haulingMode:setValue(2)
+expect(Settings.getHaulingMode() == "yolo", "YOLO reads from persisted combo index two")
+haulingMode:setValue(3)
+expect(Settings.getHaulingMode() == "safe", "malformed hauling mode falls back to Safe")
 
 dofile("Contents/mods/Basekeeper/42/media/lua/shared/Basekeeper/CategoryRules.lua")
 dofile("Contents/mods/Basekeeper/42/media/lua/shared/Basekeeper/ItemSnapshot.lua")

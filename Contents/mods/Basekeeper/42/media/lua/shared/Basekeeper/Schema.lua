@@ -7,7 +7,7 @@ Basekeeper.Schema = Basekeeper.Schema or {}
 local Schema = Basekeeper.Schema
 local CategoryCatalog = Basekeeper.CategoryCatalog
 
-Schema.VERSION = 1
+Schema.VERSION = 2
 
 function Schema.newRoot()
     return {
@@ -24,8 +24,13 @@ function Schema.ensureRoot(root)
     if type(root) ~= "table" then
         return Schema.newRoot()
     end
-    if type(root.schemaVersion) == "number" and root.schemaVersion > Schema.VERSION then
-        return nil, "future_schema_version"
+    if type(root.schemaVersion) == "number" then
+        if root.schemaVersion < Schema.VERSION then
+            return nil, "unsupported_schema_version"
+        end
+        if root.schemaVersion > Schema.VERSION then
+            return nil, "future_schema_version"
+        end
     end
 
     root.schemaVersion = Schema.VERSION

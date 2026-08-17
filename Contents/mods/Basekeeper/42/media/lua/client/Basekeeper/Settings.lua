@@ -5,6 +5,7 @@ local Settings = Basekeeper.Settings
 
 local restoreHeldItems = nil
 local includeKeyRingKeysInUnloadAll = nil
+local haulingMode = nil
 local registered = false
 
 local function translated(key)
@@ -23,7 +24,7 @@ local function register(modOptions)
     end
 
     local group = modOptions:create("Basekeeper", translated("UI_Basekeeper_Options_Group"))
-    if not group or type(group.addTickBox) ~= "function" then
+    if not group or type(group.addTickBox) ~= "function" or type(group.addComboBox) ~= "function" then
         return nil, "invalid_mod_options_group"
     end
 
@@ -39,9 +40,20 @@ local function register(modOptions)
         false,
         translated("UI_Basekeeper_Options_IncludeKeyRingKeys_Tooltip")
     )
-    if not restoreHeldItems or not includeKeyRingKeysInUnloadAll then
+    haulingMode = group:addComboBox(
+        "haulingMode",
+        translated("UI_Basekeeper_Options_HaulingMode")
+    )
+    if haulingMode and type(haulingMode.addItem) == "function" then
+        haulingMode:addItem(translated("UI_Basekeeper_Options_HaulingMode_Safe"), true)
+        haulingMode:addItem(translated("UI_Basekeeper_Options_HaulingMode_Yolo"), false)
+    else
+        haulingMode = nil
+    end
+    if not restoreHeldItems or not includeKeyRingKeysInUnloadAll or not haulingMode then
         restoreHeldItems = nil
         includeKeyRingKeysInUnloadAll = nil
+        haulingMode = nil
         return nil, "invalid_mod_options_tickbox"
     end
 
@@ -62,6 +74,13 @@ end
 
 function Settings.getIncludeKeyRingKeysInUnloadAll()
     return includeKeyRingKeysInUnloadAll and includeKeyRingKeysInUnloadAll:getValue() == true or false
+end
+
+function Settings.getHaulingMode()
+    if haulingMode and haulingMode:getValue() == 2 then
+        return "yolo"
+    end
+    return "safe"
 end
 
 local modOptions = require "PZAPI/ModOptions"
